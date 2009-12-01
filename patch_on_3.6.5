@@ -1,0 +1,213 @@
+--- share/html/Elements/EditCustomFieldBinary	(revision 21664)
++++ share/html/Elements/EditCustomFieldBinary	(local)
+@@ -45,6 +45,14 @@
+ %# those contributions and any derivatives thereof.
+ %# 
+ %# END BPS TAGGED BLOCK }}}
++% if ( $m->callers(-2) && $m->callers(-2)->path eq '/Ticket/Create.html' && $session{CloneCustomField} && $session{CloneCustomField}{$CustomField->Id} ) {
++%    for my $value ( @{$session{CloneCustomField}{$CustomField->Id}} ) {
++<input type="checkbox" class="checkbox"
++    name="<%$NamePrefix%><%$CustomField->Id%>-DeleteCloneValueIds"
++    class="CF-<%$CustomField->id%>-Edit" value="<% $value->{Id} %>"/>
++    <% $value->{Value} %><br />
++%    }
++% }
+ % while ($Values and my $value = $Values->Next ) {
+ %# XXX - let user download the file(s) here?
+ <input type="checkbox" class="checkbox" name="<%$NamePrefix%><%$CustomField->Id%>-DeleteValueIds" value="<% $value->Id %>" /><a href="<%$RT::WebPath%>/Download/CustomFieldValue/<% $value->Id %>/<% $value->Content %>"><% $value->Content %></a><br />
+--- share/html/Elements/EditCustomFieldImage	(revision 21664)
++++ share/html/Elements/EditCustomFieldImage	(local)
+@@ -45,6 +45,13 @@
+ %# those contributions and any derivatives thereof.
+ %# 
+ %# END BPS TAGGED BLOCK }}}
++% if ( $m->callers(-2) && $m->callers(-2)->path eq '/Ticket/Create.html' && $session{CloneCustomField} && $session{CloneCustomField}{$CustomField->Id} ) {
++%    for my $value ( @{$session{CloneCustomField}{$CustomField->Id}} ) {
++<input type="checkbox" class="checkbox" name="<%$NamePrefix%><%$CustomField->Id%>-DeleteCloneValueIds" class="CF-<%$CustomField->id%>-Edit" value="<% $value->{Id} %>"/>
++    <% $value->{Value} %><br />
++%    }
++% }
++
+ % while ($Values and my $value = $Values->Next ) {
+ <input type="checkbox" class="checkbox" name="<%$NamePrefix%><%$CustomField->Id%>-DeleteValueIds" value="<% $value->Id %>" /><& ShowCustomFieldImage, Object => $value &>
+ <br />
+--- share/html/Elements/MessageBox	(revision 21664)
++++ share/html/Elements/MessageBox	(local)
+@@ -46,6 +46,7 @@
+ %# 
+ %# END BPS TAGGED BLOCK }}}
+ <textarea class="messagebox" cols="<%$Width%>" rows="<%$Height%>" wrap="<%$Wrap%>" name="<%$Name%>"><& /Elements/Callback, %ARGS &><% $Default %><%$message%><%$IncludeSignature ? $signature : ''%></textarea>
++<&/Elements/Callback,_CallbackName => 'AfterTextArea', %ARGS&>
+ <%INIT>
+ 
+ my $message = '';
+--- share/html/Ticket/Create.html	(revision 21664)
++++ share/html/Ticket/Create.html	(local)
+@@ -239,7 +239,92 @@
+ </form>
+ 
+ <%INIT>
++$m->comp( '/Elements/Callback', _CallbackName => 'Init',ARGSRef =>\%ARGS );
++my $CloneTicketObj;
++if ( $CloneTicket ) {
++    $CloneTicketObj = RT::Ticket->new( $session{CurrentUser} );
++    $CloneTicketObj->Load($CloneTicket) or Abort(loc("Ticket could not be loaded"));
++    
++    my $clone = {
++        Requestors       => join( ',', $CloneTicketObj->RequestorAddresses ),
++        Cc               => join( ',', $CloneTicketObj->CcAddresses),
++        AdminCc          => join( ',', $CloneTicketObj->AdminCcAddresses),
++        InitialPriority => $CloneTicketObj->Priority, 
++    };
++    
++    $clone->{$_} = $CloneTicketObj->$_() 
++        for qw/Owner Subject FinalPriority TimeEstimated TimeWorked 
++                Status TimeLeft Starts Started Due Resolved/;
++    
++        my $members = $CloneTicketObj->Members;
++        my ( @members, @members_of, @refers, @refers_by, @depends, @depends_by );
++        while ( my $member = $members->Next ) {
++            push @members, $member->LocalBase;
++        }
++        $clone->{'MemberOf-new'} = join ' ', @members;
++    
++        my $members_of = $CloneTicketObj->MemberOf;
++        while ( my $member_of = $members_of->Next ) {
++            push @members_of, $member_of->LocalTarget;
++        }
++        $clone->{'new-MemberOf'} = join ' ', @members_of;
++        
++        my $refers = $CloneTicketObj->RefersTo;
++        while ( my $refer = $refers->Next ) {
++            push @refers, $refer->LocalTarget;
++        }
++        $clone->{'new-RefersTo'} = join ' ', @refers;
++    
++        my $refers_by = $CloneTicketObj->ReferredToBy;
++        while ( my $refer_by = $refers_by->Next ) {
++            push @refers_by, $refer_by->LocalBase;
++        }
++        $clone->{'RefersTo-new'} = join ' ', @refers_by;
++    
++        my $depends = $CloneTicketObj->DependsOn;
++        while ( my $depend = $depends->Next ) {
++            push @depends, $depend->LocalTarget;
++        }
++        $clone->{'new-DependsOn'} = join ' ', @depends;
++    
++        my $depends_by = $CloneTicketObj->DependedOnBy;
++        while ( my $depend_by = $depends_by->Next ) {
++            push @depends_by, $depend_by->LocalBase;
++        }
++        $clone->{'DependsOn-new'} = join ' ', @depends_by;
++    
++    
++    
++    my $cfs = $CloneTicketObj->QueueObj->TicketCustomFields();
++    while ( my $cf = $cfs->Next ) {
++        my $cf_id = $cf->id;
++        my $cf_values = $CloneTicketObj->CustomFieldValues( $cf->id );
++        my @cf_values;
++        while ( my $cf_value = $cf_values->Next ) {
++            push @cf_values, $cf_value->Content;
++        }
++        $clone->{"Object-RT::Ticket--CustomField-$cf_id-Value"} 
++            = join "\n", @cf_values;
++    }
++    
++    for ( keys %$clone ) {
++        $ARGS{$_} = $clone->{$_} if not defined $ARGS{$_};
++    }
++
++} 
+ 
++if ( $session{CloneCustomField} ) {
++    for my $cf_id ( keys %{$session{CloneCustomField}} ) {
++        my $delete = delete 
++            $ARGS{"Object-RT::Ticket--CustomField-$cf_id-DeleteCloneValueIds"};
++        my $values = $session{CloneCustomField}{$cf_id} || [];
++        for my $delete_id ( ref $delete ? @$delete : $delete ) {
++            @$values = grep { $_->{Id} ne $delete_id } @$values;
++        }
++        $ARGS{"Object-RT::Ticket--CustomField-$cf_id-Value"} = $values
++            if @$values;
++    }
++}
+ 
+ my @results;
+ my $QueueObj = new RT::Queue($session{'CurrentUser'});
+@@ -300,6 +385,7 @@
+ 
+ if ((!exists $ARGS{'AddMoreAttach'}) and ($ARGS{'id'} eq 'new')) { # new ticket?
+     if ($ValidCFs) {
++        delete $session{CloneCustomField};
+         $m->comp('Display.html', %ARGS);
+         $RT::Logger->crit("After display call; error is $@");
+         $m->abort();
+@@ -329,4 +415,5 @@
+ $MemberOf => undef
+ $QuoteTransaction => undef
+ $Queue => undef
++$CloneTicket => undef
+ </%ARGS>
+--- share/html/Ticket/Elements/ShowTransaction	(revision 21664)
++++ share/html/Ticket/Elements/ShowTransaction	(local)
+@@ -54,7 +54,8 @@
+     </td>
+     <td class="date"><% $transdate|n %></td>
+ % my $desc = $Transaction->BriefDescription;
+-% $m->comp('/Elements/Callback', _CallbackName => 'ModifyDisplay', text => \$desc, Transaction => $Transaction, %ARGS);
++% $m->comp('/Elements/Callback', _CallbackName => 'ModifyDisplay', text =>
++% \$desc, Transaction => $Transaction, titlebar_cmd => \$titlebar_commands, %ARGS);
+     <td class="description">
+       <%$Transaction->CreatorObj->Name%> - <%$TicketString%> <%$desc%>
+     </td>
+@@ -139,7 +140,7 @@
+ unless ($Attachments) { 
+     my $attachments = $Transaction->Attachments;
+     $attachments->Columns( qw( Id Filename ContentType Headers Subject Parent ContentEncoding ContentType TransactionId) );
+-    $Attachments = $attachments->ItemsArrayRef();
++    $ARGS{Attachments} = $Attachments = $attachments->ItemsArrayRef();
+ }
+ my $titlebar_commands = '&nbsp;';
+ 
+--- lib/RT/Interface/Web.pm	(revision 21664)
++++ lib/RT/Interface/Web.pm	(local)
+@@ -387,7 +387,9 @@
+     # XXX: workaround for name conflict :(
+     $create_args{'Requestor'} = delete $create_args{'Requestors'};
+ 
+-    foreach my $arg (keys %ARGS) {
++    # make *-Upload fields the last ones to handle
++    foreach my $arg ( sort { $a =~ /-Upload/ ? $b =~ /-Upload/ ? 0 : 1 : -1 }
++        keys %ARGS ) {
+         next if $arg =~ /-(?:Magic|Category)$/;
+ 
+         if ($arg =~ /^Object-RT::Transaction--CustomField-/) {
+@@ -408,12 +410,24 @@
+                 $ARGS{$arg} =~ s/\r//g;
+             }
+ 
++            my @values;
+             if ( $arg =~ /-Upload$/ ) {
+-                $create_args{"CustomField-".$cfid} = _UploadedFile($arg);
++                push @values, _UploadedFile($arg);
+             }
+             else {
+-                $create_args{"CustomField-".$cfid} = $ARGS{"$arg"};
++                @values =
++                  ref $ARGS{"$arg"} eq 'ARRAY'
++                  ? @{ $ARGS{$arg} }
++                  : $ARGS{$arg};
+             }
++
++            my $old_value = $create_args{"CustomField-$cfid"};
++            $create_args{"CustomField-$cfid"} =
++                defined $old_value
++              ? ref $old_value eq 'ARRAY'
++                  ? [ @$old_value, @values ]
++                  : [ $old_value, @values ]
++              : \@values;
+         }
+     }
+ 

@@ -1,0 +1,48 @@
+%# BEGIN LICENSE BLOCK
+%# 
+%#  Copyright (c) 2002-2003 Jesse Vincent <jesse@bestpractical.com>
+%#  
+%#  This program is free software; you can redistribute it and/or modify
+%#  it under the terms of version 2 of the GNU General Public License 
+%#  as published by the Free Software Foundation.
+%# 
+%#  A copy of that license should have arrived with this
+%#  software, but in any event can be snarfed from www.gnu.org.
+%# 
+%#  This program is distributed in the hope that it will be useful,
+%#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+%#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+%#  GNU General Public License for more details.
+%# 
+%# END LICENSE BLOCK
+<%INIT>
+my $Ticket = $ARGS{TicketObj};
+return unless $Ticket;
+# yeah, the TicketObj arg is a ref to RT::Ticket object, I don't know why
+$Ticket = $$Ticket;
+my %args = $m->request_args;
+if ( $args{Transactions} ) {
+    my @Transactions = split /,/, $args{Transactions};
+    my @DeleteTransactions = ref $args{DeleteTransactions} ? 
+        @{$args{DeleteTransactions}} : $args{DeleteTransactions};
+    my %delete_hash = map { $_ => 1 } @DeleteTransactions;
+
+for my $id ( @Transactions ) {
+    next if $delete_hash{$id};
+    my $txn = RT::Transaction->new( $session{CurrentUser} );
+    my ( $ret, $msg ) = $txn->Load( $id );
+    if ( $ret ) {
+        if ( $txn->Type eq 'Create' || $txn->Type eq 'Correspond' ) {
+            $Ticket->Correspond( Content => $txn->Content );
+        }
+        elsif ( $txn->Type eq 'Comment' ) {
+            $Ticket->Comment( Content => $txn->Content );
+        }
+    }
+    else {
+        $RT::Logger->error( "failed to load transcaction $id: $msg" );
+    }
+}
+}
+</%INIT>
+

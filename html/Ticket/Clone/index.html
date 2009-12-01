@@ -1,0 +1,216 @@
+%# BEGIN BPS TAGGED BLOCK {{{
+%# 
+%# COPYRIGHT:
+%#  
+%# This software is Copyright (c) 1996-2009 Best Practical Solutions, LLC 
+%#                                          <jesse@bestpractical.com>
+%# 
+%# (Except where explicitly superseded by other copyright notices)
+%# 
+%# 
+%# LICENSE:
+%# 
+%# This work is made available to you under the terms of Version 2 of
+%# the GNU General Public License. A copy of that license should have
+%# been provided with this software, but in any event can be snarfed
+%# from www.gnu.org.
+%# 
+%# This work is distributed in the hope that it will be useful, but
+%# WITHOUT ANY WARRANTY; without even the implied warranty of
+%# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+%# General Public License for more details.
+%# 
+%# You should have received a copy of the GNU General Public License
+%# along with this program; if not, write to the Free Software
+%# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
+%# 02110-1301 or visit their web page on the internet at
+%# http://www.gnu.org/copyleft/gpl.html.
+%# 
+%# 
+%# CONTRIBUTION SUBMISSION POLICY:
+%# 
+%# (The following paragraph is not intended to limit the rights granted
+%# to you to modify and distribute this software under the terms of
+%# the GNU General Public License and is only of importance to you if
+%# you choose to contribute your changes and enhancements to the
+%# community by submitting them to Best Practical Solutions, LLC.)
+%# 
+%# By intentionally submitting any modifications, corrections or
+%# derivatives to this work, or any other work intended for use with
+%# Request Tracker, to Best Practical Solutions, LLC, you confirm that
+%# you are the copyright holder for those contributions and you grant
+%# Best Practical Solutions,  LLC a nonexclusive, worldwide, irrevocable,
+%# royalty-free, perpetual, license to use, copy, create derivative
+%# works based on those contributions, and sublicense and distribute
+%# those contributions and any derivatives thereof.
+%# 
+%# END BPS TAGGED BLOCK }}}
+<& /Elements/Header, Title => loc("[_1] Ticket #[_2]: [_3]",
+$clone_name, $CloneTicketObj->Id, $CloneTicketObj->Subject) &>
+<& /Ticket/Elements/Tabs, 
+    Ticket => $CloneTicketObj, 
+    current_tab => "Ticket/Clone/index.html?CloneTicket=".$CloneTicketObj->Id, 
+    Title => loc("[_1] Ticket #[_2]: [_3]", $clone_name, $CloneTicketObj->Id,
+$CloneTicketObj->Subject) &>
+
+<form method="post" action="<%$RT::WebPath%>/Ticket/Create.html" enctype="multipart/form-data">
+% for ( keys %ARGS ) {
+<input type="hidden" name="<%$_%>" value="<% $ARGS{$_} %>" />
+% }
+<input type="hidden" name="AddMoreAttach" value="1" />
+<input type="hidden" name="id" value="new" />
+<input type="hidden" name="Requestors" value="<% $session{CurrentUser}->EmailAddress %>" />
+% # from customer:
+% # Priority and timing information would be nice. (special starts, due for
+% # our calendering system)
+
+% # don't clone these fields
+% # TODO: need confirmation of this
+% for my $field ( qw/Owner TimeEstimated TimeWorked Status
+% TimeLeft Started Resolved Cc AdminCc/ ) {
+    <input type="hidden" name="<% $field %>" value="" />
+% }
+
+% for my $field ( 'RefersTo-new', 'new-RefersTo', 'new-DependsOn',
+% 'DependsOn-new', 'MemberOf-new', 'new-MemberOf' ) {
+% unless ( $ARGS{$field} ) {
+    <input type="hidden" name="<% $field %>" value="" />
+% }}
+
+% if ( @Transactions ) {
+    <input type="hidden" name="Transactions" value="<% join ',', @Transactions %>" />
+% }
+<table>
+<tr>
+<td><&|/l, $clone_name, $ARGS{CloneTicket} &>[_1] ticket [_2] in queue</&>:</td>
+<tr>
+<td>
+<select name="Queue" size="<% $queues_number %>">
+% for my $queue (@{$session{$cache_key}}) {
+  <option value="<% $queue->{Id} %>" 
+% if ($queue->{Id} eq $CloneTicketObj->Queue) {
+ selected="selected"
+% }
+>
+    <%$queue->{Name}%>
+
+% if ($queue->{Description}) {
+    (<%$queue->{Description}%>)
+% }
+  </option>
+%     }
+</select>
+</td>
+</tr>
+<table>
+<& /Elements/Submit, Label => loc('Next') &>
+
+</form>
+
+<%INIT>
+if ( $ARGS{TransactionId} ) {
+    my $txn = RT::Transaction->new( $session{CurrentUser} );
+    my ( $ret, $msg ) = $txn->Load( $ARGS{TransactionId} );
+    if ( $ret ) {
+        $ARGS{CloneTicket} = $txn->Ticket;
+        $ARGS{Content} = $txn->Content;
+    }
+    else {
+        RT::Logger->error( "can't load transaction $ARGS{'TransactionId'}: $msg" );
+        return;
+    }
+}
+
+my $CloneTicketObj = LoadTicket($ARGS{CloneTicket});
+my @Transactions;
+unless ( $ARGS{TransactionId} ) {
+    my $Transactions = $CloneTicketObj->Transactions;
+    while ( my $txn = $Transactions->Next ) {
+        if ( $txn->Type eq 'Create' || $txn->Type eq 'Correspond' || $txn->Type eq 'Comment' ) {
+            push @Transactions, $txn->id;
+        }
+    }
+}
+
+my $atts = $m->comp('/Ticket/Elements/FindAttachments', Ticket => $CloneTicketObj);
+$session{Attachments} = {};
+while ( my $att = $atts->Next ) {
+    next unless $att->Filename;
+    my $Message = MIME::Entity->build(
+        Type    => 'multipart/mixed',
+        Subject => $att->Subject,
+    );
+    $Message->attach(
+        Type     => $att->ContentType,
+        Filename => $att->Filename,
+        Data     => $att->Content,
+    );
+    $Message->make_singlepart;
+    $session{Attachments}{$att->Filename} = $Message;
+}
+
+if ( $ARGS{Pretask} ) {
+    $ARGS{Subject} = 'Pretask: ' . $CloneTicketObj->Subject;
+    $ARGS{'DependsOn-new'} = $CloneTicketObj->Id;
+}
+elsif ( $ARGS{Posttask} ) {
+    $ARGS{Subject} = 'Posttask: ' . $CloneTicketObj->Subject;
+    $ARGS{'new-DependsOn'} = $CloneTicketObj->Id;
+}
+else {
+    $ARGS{'RefersTo-new'} = $CloneTicketObj->Id;
+}
+
+# dump /Elements/SelectQueue: we need to make multiple queues visible
+my $cache_key = "SelectQueue---"
+                . $session{'CurrentUser'}->Id
+                . "---CreateTicket---1";
+
+if (not defined $session{$cache_key} ) {
+    my $q = new RT::Queues($session{'CurrentUser'});
+    $q->UnLimit;
+    
+    while (my $queue = $q->Next) {
+        if ($queue->CurrentUserHasRight('CreateTicket')) {
+            push @{$session{$cache_key}}, {
+                Id          => $queue->Id,
+                Name        => $queue->Name,
+                Description => $queue->Description,
+            };
+        }
+    }
+}
+my $queues_number = @{$session{$cache_key}};
+my $clone_name = $ARGS{Pretask} ? 'Pretask' : $ARGS{Posttask} ? 'Posttask' : 'Clone';
+
+if ( $ARGS{Queue} ) {
+    my $query = '';
+    for my $field ( keys %ARGS ) {
+        RT::Interface::Web::EscapeURI(\$ARGS{$field});
+        $query .= "$field=" . $ARGS{$field} . '&';
+    }
+    $query .= 'AddMoreAttach=1&id=new&';
+    $query .= 'Requestors=' . $session{CurrentUser}->EmailAddress . '&';
+    for my $field ( qw/Owner TimeEstimated TimeWorked Status
+        TimeLeft Started Resolved Cc AdminCc/ ) {
+        $query .= "$field=&"; # empty value
+    }
+
+    for my $field ( 'RefersTo-new', 'new-RefersTo', 'new-DependsOn',
+        'DependsOn-new', 'MemberOf-new', 'new-MemberOf' ) {
+        unless ( $ARGS{$field} ) {
+            $query .= "$field=&";
+        }
+    }
+
+    $query .= "Transactions=" . join ',', @Transactions;
+    my ( $minor_version ) = $RT::VERSION =~ /3.(\d)/;
+    if ( $minor_version >= 8 ) {
+        RT::Interface::Web::Redirect( RT->Config->Get('WebURL') . "Ticket/Create.html?$query" );
+    }
+    else {
+        RT::Interface::Web::Redirect( $RT::WebURL . "Ticket/Create.html?$query" );
+    }
+}
+</%INIT>
+

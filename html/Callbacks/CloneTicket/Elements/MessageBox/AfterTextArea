@@ -1,0 +1,52 @@
+%# BEGIN LICENSE BLOCK
+%# 
+%#  Copyright (c) 2002-2003 Jesse Vincent <jesse@bestpractical.com>
+%#  
+%#  This program is free software; you can redistribute it and/or modify
+%#  it under the terms of version 2 of the GNU General Public License 
+%#  as published by the Free Software Foundation.
+%# 
+%#  A copy of that license should have arrived with this
+%#  software, but in any event can be snarfed from www.gnu.org.
+%# 
+%#  This program is distributed in the hope that it will be useful,
+%#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+%#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+%#  GNU General Public License for more details.
+%# 
+%# END LICENSE BLOCK
+<div id="ticket-history">
+<input type="hidden" name="Transactions" value="<% join ',', @ids %>" /></td>
+<table>
+% for my $id ( sort keys %Content ) {
+<tr>
+<td><input type="checkbox" name="DeleteTransactions" value="<%$id%>" checked="checked"/></td>
+<td><% $Content{$id} |n%></td>
+</tr>
+% }
+</table>
+</div>
+<%init>
+my @Transactions;
+my %Content;
+my @ids;
+if ( $m->callers(-2) && $m->callers(-2)->path eq '/Ticket/Create.html' ) {
+    my %args = $m->request_args;
+    if ( $args{Transactions} ) {
+        @ids = split /,/, $args{Transactions};
+        my $number = 1;
+        for my $id ( @ids ) {
+            my $txn = RT::Transaction->new( $session{CurrentUser});
+            my ( $ret, $msg ) = $txn->Load( $id );
+            if ( $ret ) {
+                $Content{$id} = $m->scomp( '/Ticket/Elements/ShowTransaction',
+                        Transaction => $txn, ShowTitleBarCommands => 0, Ticket
+                        => $txn->TicketObj, RowNum => $number++ );
+            }
+            else {
+                $RT::Logger->error( "failed to load transcaction $id: $msg" );
+            }
+        } 
+    }
+}
+</%init>

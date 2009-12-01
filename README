@@ -1,0 +1,24 @@
+RT-Extension-CloneTicket-WithData version 0.04
+
+How to install:
+
+1. Run "perl Makefile.PL"
+
+2. Run "make"
+
+3. Run "make install" (you may need root permissions)
+
+4. patch RT
+   If you're running 3.6.5:
+    $ patch -p0 -d /opt/rt3 < patch_on_3.6.5
+
+   If you're running 3.8:
+    $ patch -p0 -d /opt/rt3 < patch_on_3.8
+ 
+5. Additionally, if you're running 3.8, you'll need to add
+   "RT::Extension::CloneTicket::WithData" to @Plugins in
+   etc/RT_SiteConfig.pm.  For example:
+    Set(@Plugins, qw(RT::Extension::CloneTicket::WithData));
+
+6. Clear RT's mason cache and restart the web server to make sure the
+   extension is incorporated.

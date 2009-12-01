@@ -1,0 +1,19 @@
+Revision history for RT-Extension-CloneTicket-WithData
+
+0.07 Tue Dec  1 15:16:17 EST 2009
+    * Stripped customer-specific information and renamed; first public
+      release
+0.06 Tue Aug 25 11:13:59 CST 2009
+    * redirect to create page if the Queue parameter exists
+0.05 Wed Aug 19 17:05:17 EST 2009
+    * Invert the sense of the transaction checkboxes
+0.04 Fri Jul 31 20:09:01 CST 2009
+    * show the transations part more clearly
+0.03 Wed Jul 29 20:18:42 CST 2009
+    * Clone action add RefersTo-new link
+    * show Create trans too, and let it act as Reply if it's selected.
+0.02 Tue Jul 28 18:51:35 CST 2009
+    Clone binary CFs too
+0.01 Tue Jun 30 20:13:06 CST 2009
+       Initial release.
+

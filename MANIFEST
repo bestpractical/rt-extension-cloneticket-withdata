@@ -1,0 +1,23 @@
+Changes
+html/Callbacks/CloneTicket/Elements/MessageBox/AfterTextArea
+html/Callbacks/CloneTicket/Ticket/Create.html/Init
+html/Callbacks/CloneTicket/Ticket/Display.html/BeforeDisplay
+html/Callbacks/CloneTicket/Ticket/Elements/ShowTransaction/ModifyDisplay
+html/Callbacks/CloneTicket/Ticket/Elements/Tabs/Default
+html/Ticket/Clone/index.html
+inc/Module/Install.pm
+inc/Module/Install/Base.pm
+inc/Module/Install/Can.pm
+inc/Module/Install/Fetch.pm
+inc/Module/Install/Makefile.pm
+inc/Module/Install/Metadata.pm
+inc/Module/Install/RTx.pm
+inc/Module/Install/Win32.pm
+inc/Module/Install/WriteAll.pm
+lib/RT/Extension/CloneTicket/WithData.pm
+Makefile.PL
+MANIFEST			This list of files
+META.yml
+patch_on_3.6.5
+patch_on_3.8
+README

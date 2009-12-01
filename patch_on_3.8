@@ -1,0 +1,155 @@
+--- lib/RT/Interface/Web.pm	(revision 21664)
++++ lib/RT/Interface/Web.pm	(local)
+@@ -511,48 +511,60 @@
+         );
+     }
+ 
+-    foreach my $arg (keys %ARGS) {
++    # make *-Upload fields the last ones to handle
++    foreach my $arg ( sort { $a =~ /-Upload/ ? $b =~ /-Upload/ ? 0 : 1 : -1 }
++        keys %ARGS )
++    {
+         next if $arg =~ /-(?:Magic|Category)$/;
+ 
+-        if ($arg =~ /^Object-RT::Transaction--CustomField-/) {
++        if ( $arg =~ /^Object-RT::Transaction--CustomField-/ ) {
+             $create_args{$arg} = $ARGS{$arg};
+         }
++
+         # Object-RT::Ticket--CustomField-3-Values
+         elsif ( $arg =~ /^Object-RT::Ticket--CustomField-(\d+)/ ) {
+             my $cfid = $1;
+ 
+             my $cf = RT::CustomField->new( $session{'CurrentUser'} );
+-            $cf->Load( $cfid );
++            $cf->Load($cfid);
+             unless ( $cf->id ) {
+-                $RT::Logger->error( "Couldn't load custom field #". $cfid );
++                $RT::Logger->error( "Couldn't load custom field #" . $cfid );
+                 next;
+             }
+ 
++            my @values = ();
+             if ( $arg =~ /-Upload$/ ) {
+-                $create_args{"CustomField-$cfid"} = _UploadedFile( $arg );
+-                next;
++                push @values, _UploadedFile($arg);
+             }
++            else {
+ 
+-            my $type = $cf->Type;
++                my $type = $cf->Type;
+ 
+-            my @values = ();
+-            if ( ref $ARGS{ $arg } eq 'ARRAY' ) {
+-                @values = @{ $ARGS{ $arg } };
+-            } elsif ( $type =~ /text/i ) {
+-                @values = ($ARGS{ $arg });
+-            } else {
+-                @values = split /\r*\n/, $ARGS{ $arg } || '';
+-            }
+-            @values = grep length,
+-                map {
++                if ( ref $ARGS{$arg} eq 'ARRAY' ) {
++                    @values = @{ $ARGS{$arg} };
++                }
++                elsif ( $type =~ /text/i ) {
++                    @values = ( $ARGS{$arg} );
++                }
++                else {
++                    @values = split /\r*\n/, $ARGS{$arg} || '';
++                }
++                @values = grep length, map {
+                     s/\r+\n/\n/g;
+                     s/^\s+//;
+                     s/\s+$//;
+                     $_;
+-                }
+-                grep defined, @values;
++                  }
++                  grep defined, @values;
++            }
+ 
+-            $create_args{"CustomField-$cfid"} = \@values;
++            my $old_value = $create_args{"CustomField-$cfid"};
++            $create_args{"CustomField-$cfid"} =
++                defined $old_value
++              ? ref $old_value eq 'ARRAY'
++                  ? [ @$old_value, @values ]
++                  : [ $old_value, @values ]
++              : \@values;
+         }
+     }
+ 
+--- share/html/Elements/EditCustomFieldBinary	(revision 21664)
++++ share/html/Elements/EditCustomFieldBinary	(local)
+@@ -45,10 +45,19 @@
+ %# those contributions and any derivatives thereof.
+ %# 
+ %# END BPS TAGGED BLOCK }}}
++% if ( $m->callers(-2) && $m->callers(-2)->path eq '/Ticket/Create.html' && $session{CloneCustomField} && $session{CloneCustomField}{$CustomField->Id} ) {
++%    for my $value ( @{$session{CloneCustomField}{$CustomField->Id}} ) {
++<input type="checkbox" class="checkbox"
++    name="<%$NamePrefix%><%$CustomField->Id%>-DeleteCloneValueIds"
++    class="CF-<%$CustomField->id%>-Edit" value="<% $value->{Id} %>"/>
++    <% $value->{Value} %><br />
++%    }
++% }
+ % while ( $Values and my $value = $Values->Next ) {
+ %# XXX - let user download the file(s) here?
+ <input type="checkbox" class="checkbox" name="<%$NamePrefix%><%$CustomField->Id%>-DeleteValueIds" class="CF-<%$CustomField->id%>-Edit" value="<% $value->Id %>" /><a href="<%RT->Config->Get('WebPath')%>/Download/CustomFieldValue/<% $value->Id %>/<% $value->Content %>"><% $value->Content %></a><br />
+ % }
++
+ % if (!$MaxValues || !$Values || $Values->Count < $MaxValues) {
+ <input type="file" name="<% $NamePrefix %><% $CustomField->Id %>-Upload" class="CF-<%$CustomField->id%>-Edit" />
+ % }
+--- share/html/Elements/EditCustomFieldImage	(revision 21664)
++++ share/html/Elements/EditCustomFieldImage	(local)
+@@ -45,6 +45,13 @@
+ %# those contributions and any derivatives thereof.
+ %# 
+ %# END BPS TAGGED BLOCK }}}
++% if ( $m->callers(-2) && $m->callers(-2)->path eq '/Ticket/Create.html' && $session{CloneCustomField} && $session{CloneCustomField}{$CustomField->Id} ) {
++%    for my $value ( @{$session{CloneCustomField}{$CustomField->Id}} ) {
++<input type="checkbox" class="checkbox" name="<%$NamePrefix%><%$CustomField->Id%>-DeleteCloneValueIds" class="CF-<%$CustomField->id%>-Edit" value="<% $value->{Id} %>"/>
++    <% $value->{Value} %><br />
++%    }
++% }
++
+ % while ($Values and my $value = $Values->Next ) {
+ <input type="checkbox" class="checkbox" name="<%$NamePrefix%><%$CustomField->Id%>-DeleteValueIds" class="CF-<%$CustomField->id%>-Edit" value="<% $value->Id %>" /><& ShowCustomFieldImage, Object => $value &>
+ <br />
+--- share/html/Ticket/Create.html	(revision 21664)
++++ share/html/Ticket/Create.html	(local)
+@@ -319,9 +319,23 @@
+     for ( keys %$clone ) {
+         $ARGS{$_} = $clone->{$_} if not defined $ARGS{$_};
+     }
++}
+ 
++if ( $session{CloneCustomField} ) {
++    for my $cf_id ( keys %{$session{CloneCustomField}} ) {
++        my $delete = delete 
++            $ARGS{"Object-RT::Ticket--CustomField-$cf_id-DeleteCloneValueIds"};
++        my $values = $session{CloneCustomField}{$cf_id} || [];
++        for my $delete_id ( ref $delete ? @$delete : $delete ) {
++            @$values = grep { $_->{Id} ne $delete_id } @$values;
++        }
++        $ARGS{"Object-RT::Ticket--CustomField-$cf_id-Value"} = $values
++            if @$values;
++    }
+ }
++
+ my @results;
++
+ my $QueueObj = new RT::Queue($session{'CurrentUser'});
+ $QueueObj->Load($Queue) || Abort(loc("Queue could not be loaded."));
+ 
+@@ -389,6 +403,7 @@
+ 
+ if ((!exists $ARGS{'AddMoreAttach'}) and (defined($ARGS{'id'}) and $ARGS{'id'} eq 'new')) { # new ticket?
+     if ( $ValidCFs && !$checks_failure && !$skip_create ) {
++        delete $session{CloneCustomField};
+         $m->comp('Display.html', %ARGS);
+         $RT::Logger->crit("After display call; error is $@");
+         $m->abort();
